@@ -9,9 +9,56 @@ namespace MonitoringApp.Services
     {
         private readonly DatabaseService _db;
 
+        private static readonly Dictionary<int, (string Name, string Line, string Process)> _machineCache = new();
+
         public MachineService()
         {
             _db = new DatabaseService();
+        }
+
+
+        public (string Name, string Line, string Process) GetMachineInfoCached(int id)
+        {
+            // A. Cek Cache Dulu (In-Memory)
+            if (_machineCache.ContainsKey(id))
+            {
+                return _machineCache[id];
+            }
+
+            // B. Jika Tidak Ada, Ambil dari Database
+            string name = "Unknown", line = "-", process = "-";
+            
+            using (var conn = _db.GetConnection())
+            {
+                try
+                {
+                    conn.Open();
+                    var cmd = new SqlCommand("SELECT name, line_production, process FROM line WHERE id = @id", conn);
+                    cmd.Parameters.AddWithValue("@id", id);
+                    
+                    using (var r = cmd.ExecuteReader())
+                    {
+                        if (r.Read())
+                        {
+                            name = r["name"] != DBNull.Value ? r["name"].ToString() : "Unknown";
+                            line = r["line_production"] != DBNull.Value ? r["line_production"].ToString() : "-";
+                            process = r["process"] != DBNull.Value ? r["process"].ToString() : "-";
+                        }
+                    }
+                }
+                catch { /* Ignore error, return default */ }
+            }
+
+            // C. Simpan ke Cache
+            var result = (name, line, process);
+            _machineCache[id] = result;
+
+            return result;
+        }
+
+        public void ClearCache()
+        {
+            _machineCache.Clear();
         }
 
         // 1. UPDATE QUERY SELECT (Agar saat Admin dibuka, remark lama muncul)
